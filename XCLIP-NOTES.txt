@@ -1,0 +1,59 @@
+Deskflow 1.27.0: experimental GNOME 50 / Xwayland clipboard bridge
+
+Base: v1.27.0, commit 081f6478e654a112168879e67a41ce7d7e4ae3af.
+Approach inspired by https://github.com/coekfung/deskflow/tree/dev-xclip
+and https://github.com/deskflow/deskflow/discussions/9240.
+
+Run from a GNOME Wayland terminal:
+  ./prepare-xclip-config.py    # once
+  ./run-xclip.sh
+Quit other Deskflow instances first, then click Start in the test GUI.
+The first start may require GNOME's input-sharing consent.
+The GUI and core are both built locally. No sudo or system installation needed.
+The launcher uses run/config, copied from your Flatpak profile; its log is
+run/deskflow-xclip.log. Server autostart is disabled in the copied profile.
+The original Flatpak and native settings are not edited.
+
+Behavior:
+  DESKFLOW_CLIPBOARD=xclip opts the Wayland SERVER into this backend.
+  InputCapture v1 still provides mouse/keyboard capture through libei.
+  The backend works with libportal 0.9.1; it requires no portal clipboard API.
+  Builds with newer libportal keep the default portal backend unless opted in.
+  Clipboard is sampled at input-capture activation and screen departure, not
+  by a periodic helper-spawning thread. Content fingerprints detect new text
+  even when the offered MIME formats are unchanged.
+  xclip is invoked directly, with binary stdin and closed inherited descriptors.
+  Each helper operation is bounded to 750 ms; a refresh uses up to two helpers.
+  The server-configured payload limit is honored, with a hard cap of 64 MiB.
+  Failed/unsupported reads leave the previous valid clipboard cache intact.
+
+Supported: normal CLIPBOARD selection, UTF-8 plain text and PNG images converted
+to/from Deskflow's DIB bitmap format. Images take priority if both are offered.
+This xclip implementation advertises one chosen format per received item.
+HTML/rich text, PRIMARY selection, legacy STRING-only encodings, file transfer,
+and propagation of an unavailable/unsupported selection as a clear are omitted.
+Xwayland clipboard synchronization remains compositor-dependent: a successful
+isolated X11 test does not prove native Wayland app / remote client transfers.
+Manually test native GNOME/browser text both directions, a second copy with
+the same MIME types, screenshots both directions, and switching back and forth.
+The user confirmed clipboard transfer works on GNOME 50 with a remote peer.
+The backend remains experimental; this does not establish compatibility with
+all native Wayland applications, clipboard formats, or remote platforms.
+
+Build (development packages must be installed):
+  cmake -S . -B build-wayland -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DBUILD_X11_SUPPORT=OFF -DBUILD_TESTS=ON -DSKIP_BUILD_TESTS=ON \
+    -DBUILD_INSTALLER=OFF
+  cmake --build build-wayland --target deskflow deskflow-core \
+    XclipClipboardBridgeTests ClipboardTests EiKeyStateTests -j4
+  QT_QPA_PLATFORM=offscreen ctest --test-dir build-wayland/src/unittests \
+    -R '^(XclipClipboardBridgeTests|ClipboardTests|EiKeyStateTests)$' \
+    --output-on-failure
+
+The bridge test uses a fake helper for failures/timeouts/descriptor isolation,
+and real xclip on an isolated Xvfb server for UTF-8 and large payload transfers.
+It never reads or writes the desktop's real clipboard.
+
+Rollback: quit this build and launch the original Flatpak:
+  flatpak run org.deskflow.deskflow
+No Mutter, portals, kernel, Mesa, AMDGPU, or ROCm replacements are involved.

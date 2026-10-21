@@ -146,6 +146,8 @@ elseif(UNIX)
     list(APPEND PLATFORM_SOURCES
       EiClipboard.cpp
       EiClipboard.h
+      XclipClipboardBridge.cpp
+      XclipClipboardBridge.h
       EiComputer.cpp
       EiComputer.h
       EiEventQueueBuffer.cpp

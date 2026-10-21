@@ -35,6 +35,7 @@ class PortalRemoteDesktop;
 class PortalInputCapture;
 class PortalGlobalShortcuts;
 class EiClipboard;
+class XclipClipboardBridge;
 
 using ClipboardInfo = IComputer::ClipboardInfo;
 
@@ -88,6 +89,10 @@ public:
 
   // Send clipboard event (needed by PortalInputCapture)
   void sendClipboardEvent(EventTypes type, ClipboardID id) const;
+  bool usesXclipClipboard() const
+  {
+    return m_xclipClipboard != nullptr;
+  }
 
   // Local clipboard cache (used by PortalRemoteDesktop to land selection reads)
   EiClipboard *getClipboardCache() const
@@ -155,6 +160,7 @@ private:
 
   // clipboard stuff
   EiClipboard *m_clipboard = nullptr;
+  XclipClipboardBridge *m_xclipClipboard = nullptr;
   size_t m_maximumClipboardSize = INT_MAX;
 
   std::vector<ei_device *> m_eiDevices;

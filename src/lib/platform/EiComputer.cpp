@@ -20,6 +20,8 @@
 #include "platform/EiKeyState.h"
 #include "platform/PortalInputCapture.h"
 #include "platform/PortalRemoteDesktop.h"
+#include "platform/XclipClipboardBridge.h"
+#include <QStandardPaths>
 
 #include <algorithm>
 #include <bit>
@@ -47,6 +49,14 @@ EiComputer::EiComputer(bool isPrimary, IEventQueue *events, bool usePortal)
       m_h{1},
       m_isOnComputer{isPrimary}
 {
+  if (usePortal && isPrimary && qgetenv("DESKFLOW_CLIPBOARD") == "xclip") {
+    const auto executable = QStandardPaths::findExecutable("xclip");
+    if (qEnvironmentVariableIsEmpty("DISPLAY") || executable.isEmpty())
+      throw std::runtime_error("xclip clipboard requires xclip and an Xwayland DISPLAY");
+    m_xclipClipboard = new XclipClipboardBridge(executable);
+    m_clipboard = new EiClipboard(kClipboardClipboard);
+    LOG_INFO("using experimental xclip clipboard bridge; input capture remains Wayland portal based");
+  }
   initEi();
   m_keyState = new EiKeyState(this, events);
   // install event handlers
@@ -98,13 +108,14 @@ EiComputer::~EiComputer()
   cleanupEi();
 
   delete m_keyState;
-  delete m_clipboard;
 
 #ifdef HAVE_LIBPORTAL_SHORTCUTS
   delete m_portalGlobalShortcuts;
 #endif
   delete m_portalInputCapture;
   delete m_portalRemoteDesktop;
+  delete m_xclipClipboard;
+  delete m_clipboard;
 }
 
 void EiComputer::eiLogEvent(ei_log_priority priority, const char *message) const
@@ -177,6 +188,8 @@ void *EiComputer::getEventTarget() const
 
 bool EiComputer::getClipboard(ClipboardID id, IClipboard *clipboard) const
 {
+  if (m_xclipClipboard)
+    return id == kClipboardClipboard && m_xclipClipboard->copyTo(clipboard, m_clipboard);
   // If using portal input capture, get clipboard from there
   if (m_portalInputCapture) {
     const auto sourceClipboard = m_portalInputCapture->getClipboard(id);
@@ -485,6 +498,10 @@ bool EiComputer::setClipboard(ClipboardID id, const IClipboard *clipboard)
     return false;
   }
 
+  if (m_xclipClipboard)
+    return id == kClipboardClipboard &&
+           m_xclipClipboard->publish(clipboard, m_clipboard, qint64(maximumClipboardSize()) * 1024);
+
   // If using portal input capture, set clipboard there
   if (m_portalInputCapture) {
     IClipboard *targetClipboard = m_portalInputCapture->getClipboard(id);
@@ -510,6 +527,9 @@ bool EiComputer::setClipboard(ClipboardID id, const IClipboard *clipboard)
 
 void EiComputer::checkClipboards()
 {
+  if (m_xclipClipboard && Settings::value(Settings::Server::EnableClipboard).toBool() &&
+      m_xclipClipboard->refresh(m_clipboard, qint64(maximumClipboardSize()) * 1024))
+    sendClipboardEvent(EventTypes::ClipboardGrabbed, kClipboardClipboard);
   // For portal-based input capture, clipboard changes come via portal events
   // For socket-based, clipboard is passive and changes are sent explicitly
   // Nothing to do here

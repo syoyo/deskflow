@@ -251,6 +251,8 @@ void PortalInputCapture::handleSessionClosed(XdpSession *session)
 
 void PortalInputCapture::claimClipboardOwnership([[maybe_unused]] XdpSession *session) const
 {
+  if (m_computer->usesXclipClipboard())
+    return;
 #ifdef HAVE_LIBPORTAL_CLIPBOARD
   PortalClipboard::claimOwnership(m_clipboard, session);
 #endif
@@ -296,7 +298,7 @@ void PortalInputCapture::setupSession(XdpInputCaptureSession *session)
   XdpSession *parentSession = xdp_input_capture_session_get_session(session);
 
 #ifdef HAVE_LIBPORTAL_CLIPBOARD
-  if (!xdp_session_is_clipboard_enabled(parentSession) && m_portalVersion > 1) {
+  if (!m_computer->usesXclipClipboard() && !xdp_session_is_clipboard_enabled(parentSession) && m_portalVersion > 1) {
     if (Settings::value(Settings::Server::XdpClipboardRetried).toBool()) {
       // some backends never report clipboard enabled even when granted; don't loop forever
       LOG_DEBUG("clipboard still not enabled on session after one retry, continuing without it");
@@ -566,6 +568,8 @@ void PortalInputCapture::addBarrier(
 gboolean PortalInputCapture::initSession()
 {
   LOG_DEBUG("setting up input capture session");
+  if (m_computer->usesXclipClipboard())
+    LOG_INFO("xclip clipboard enabled independently of the InputCapture portal version");
   XdpInputCaptureSession *session;
 #ifdef HAVE_LIBPORTAL_INPUTCAPTURE_RESTORE
   g_autoptr(GError) error = nullptr;
@@ -606,7 +610,8 @@ gboolean PortalInputCapture::initSession()
       return FALSE;
     }
     m_session = session;
-    xdp_session_request_clipboard(xdp_input_capture_session_get_session(session));
+    if (!m_computer->usesXclipClipboard())
+      xdp_session_request_clipboard(xdp_input_capture_session_get_session(session));
     xdp_input_capture_session_set_session_persistence(session, XDP_INPUT_CAPTURE_SESSION_PERSISTENCE_PERSISTENT);
     if (auto sessionToken = Settings::value(Settings::Server::XdpRestoreToken).toByteArray(); !sessionToken.isEmpty()) {
       xdp_input_capture_session_set_restore_token(session, strdup(sessionToken.data()));
@@ -738,6 +743,11 @@ void PortalInputCapture::handleActivated(
   }
   m_activationId = activationId;
   m_isActive = true;
+
+  if (m_computer->usesXclipClipboard()) {
+    m_computer->checkClipboards();
+    return;
+  }
 
 #ifdef HAVE_LIBPORTAL_CLIPBOARD
   if (m_session) {

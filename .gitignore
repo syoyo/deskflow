@@ -49,3 +49,6 @@ CMakeFiles/*
 # Ai helperfilers
 **/[cC]laude.[mM][dD]
 **/CLAUDE.[mM][dD]
+# Local test profile, logs, and copied certificates.
+/run/
+/build-wayland/
